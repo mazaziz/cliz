@@ -28,6 +28,8 @@ class Interface:
 
         def _usage_right(n: Node):
             v = n.name
+            if isinstance(n, Argument):
+                v = v.upper()
             if n.next is None:
                 return v
             elif isinstance(n.next, Node):
@@ -45,15 +47,21 @@ class Interface:
         usageq.append(_usage_right(node))
 
         print("Usage: {}".format(" ".join(usageq)))
-        if node is self.root or (isinstance(node, Command) and node.help is not None and node.handler is not None):
-            print("")
-            print(node.help)
+        if node is self.root:
+            print("\n{}".format(node.help))
+        elif isinstance(node, Command):
+            if node.handler and node.handler.help:
+                print("\n{}".format(node.handler.help))
+            else:
+                print("\n{}".format(node.help))
+        elif isinstance(node, Argument) and node.handler and node.handler.help:
+            print("\n{}".format(node.handler.help))
 
         # print help options
         if node.handler is not None:
             items = []
             longest = 0
-            for opt in set(node.get_options_up().map.values()):
+            for opt in set(node.options.map.values()):
                 items.append([
                     "  " if opt.short is None else opt.short,
                     " " if opt.short is None else ",",
@@ -66,7 +74,7 @@ class Interface:
                 print("\nOptions:")
                 for i in items:
                     print("  {}{} {:{fill}}  {} {}".format(i[0], i[1], i[2], i[3], i[4], fill=longest))
-        
+
         # arguments
         if len(arguments) > 0:
             print("\nArguments:")
@@ -84,17 +92,15 @@ class Interface:
                     print("  {:{fill}}  {}".format(cmd.name, "" if cmd.help is None else str(cmd.help), fill=longest))
 
     def normalize_user_options(self, node: Node, user_opts: dict):
-        node_options = node.get_options_up()
-
         # check for user options which are not allowed on the node
         for name in user_opts:
             if not name.startswith("-"):
                 continue
-            assert name in node_options, "unknown option: {}".format(name)
+            assert name in node.options, "unknown option: {}".format(name)
 
         # validate leaf options
         normalized = {}
-        for opt in set(node_options.map.values()):
+        for opt in set(node.options.map.values()):
             if opt.flag:
                 normalized[opt.name] = user_opts.get(opt.name, 0)
                 if opt.short is not None:

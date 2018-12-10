@@ -1,2 +1,3 @@
-from .node import Command, Argument, Option
+from .node import Command, Argument, Handler
+from .option import Option
 from .interface import Interface

@@ -8,6 +8,15 @@ class CommandNotFound(Exception):
         self.node = node
         self.command = command
 
+class Handler:
+    def __init__(self, callback, **kwargs):
+        assert callable(callback)
+        self.callback = callback
+        self.help = kwargs.get("help", None)
+
+    def __call__(self, opts):
+        self.callback(opts)
+
 class Node:
     NAME_PATTERN = re.compile(r"^[^-\s][^\s]*$")
 
@@ -15,27 +24,11 @@ class Node:
         self.name = name
         assert Node.NAME_PATTERN.search(name), "invalid name for node {}".format(self)
         self.prev: Node = None
-
-        # options
-        self.options = OptionMap()
-        for opt in kwargs.get("options", []):
-            self.options.add(opt)
-
-        # next node(s)
         self.next: typing.Union[Argument, dict] = None
-        _next = kwargs.get("next", [])
-        if not isinstance(_next, list):
-            _next = [_next]
-        for i in _next:
-            self.attach(i)
-
-        # handler
-        self.handler = kwargs.get("handler", None)
-        if self.handler is not None:
-            assert callable(self.handler), "given handler '{}' is not callable".format(self.handler)
-
+        self.options = OptionMap()
+        self.handler = None
         self.help = kwargs.get("help", None)
-    
+
     def __getitem__(self, key) -> "Node":
         if self.next is None:
             raise Exception("leaf node")
@@ -51,24 +44,42 @@ class Node:
 
     def __str__(self):
         return "{}[name='{}']".format(type(self).__name__, self.name)
-
-    def attach(self, node):
-        if isinstance(node, Argument):
-            assert node.prev is None
-            assert self.next is None
-            self.next = node
-            node.prev = self
-        elif isinstance(node, Command):
-            assert node.prev is None
-            if self.next is None:
-                self.next = {}
-            assert isinstance(self.next, dict)
-            assert node.name not in self.next, "duplicate command: {}".format(node.name)
-            self.next[node.name] = node
-            node.prev = self
-        else:
-            raise Exception("invalid node type '{}'".format(type(node)))
     
+    def _attach_argument(self, arg):
+        assert arg.prev is None
+        assert self.next is None
+        self.next = arg
+        arg.prev = self
+    
+    def _attach_command(self, cmd):
+        assert cmd.prev is None
+        if self.next is None:
+            self.next = {}
+        assert isinstance(self.next, dict)
+        assert cmd.name not in self.next, "duplicate command: {}".format(cmd.name)
+        self.next[cmd.name] = cmd
+        cmd.prev = self
+
+    def _attach_handler(self, h: Handler):
+        assert self.handler is None
+        self.handler = h
+
+    def attach(self, *items):
+        for item in items:
+            if isinstance(item, Argument):
+                self._attach_argument(item)
+            elif isinstance(item, Command):
+                self._attach_command(item)
+            elif isinstance(item, Option):
+                self.options.add(item)
+            elif isinstance(item, Handler):
+                self._attach_handler(item)
+            elif callable(item):
+                self._attach_handler(Handler(item))
+            else:
+                raise Exception("invalid item type '{}' to attach".format(type(item)))
+        return self
+
     def get_options_down(self) -> OptionMap:
         down = copy.copy(self.options)
         if isinstance(self.next, Node):
@@ -77,14 +88,6 @@ class Node:
             for node in self.next.values():
                 down.merge(node.get_options_down())
         return down
-    
-    def get_options_up(self) -> OptionMap:
-        up = copy.copy(self.options)
-        pointer = self.prev
-        while pointer is not None:
-            up.merge(pointer.options)
-            pointer = pointer.prev
-        return up
 
 class Command(Node):
     pass
